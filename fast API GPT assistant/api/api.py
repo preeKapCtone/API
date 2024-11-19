@@ -47,7 +47,7 @@ app.add_exception_handler(BaseCustomException, base_custom_exception_handler)
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React 클라이언트 주소
+    allow_origins=["http://localhost:5173"],  # React 클라이언트 주소
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
