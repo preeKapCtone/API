@@ -3,15 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from openai import OpenAI
-import requests
 import re
 import os
 from dotenv import load_dotenv
 import time
+import requests
 
 # .env 파일 로드
 load_dotenv()
-
 
 # 사용자 정의 예외의 기본 클래스
 class BaseCustomException(Exception):
@@ -28,11 +27,6 @@ class BaseCustomException(Exception):
 class OpenAIInitializationError(BaseCustomException):
     def __init__(self):
         super().__init__(status_code=500, detail="OpenAI 클라이언트 초기화 오류")
-
-# 사용자 정의 예외: CLOVA API 오류
-class ClovaAPIError(BaseCustomException):
-    def __init__(self, message: str):
-        super().__init__(status_code=500, detail=f"CLOVA Sentiment API 호출 오류: {message}")
 
 # 사용자 정의 예외 핸들러
 async def base_custom_exception_handler(request: Request, exc: BaseCustomException):
@@ -61,7 +55,9 @@ class ChatRequest(BaseModel):
 # 응답 데이터 모델
 class ChatResponse(BaseModel):
     response: str
-    sentiment: str  # 감정 결과
+    sentiment: str
+    sentiment_score: float
+    sentiment_magnitude: float
 
 # OpenAI 클라이언트 생성
 try:
@@ -71,6 +67,11 @@ try:
     client = OpenAI(api_key=openai_api_key)
 except Exception as e:
     raise OpenAIInitializationError()
+
+# Google API 키 확인
+google_api_key = os.getenv("GOOGLE_API_KEY")
+if not google_api_key:
+    raise RuntimeError("Google Cloud API 키가 .env에 없습니다.")
 
 # Run 상태 확인 함수
 def wait_on_run(run, thread):
@@ -85,30 +86,35 @@ def wait_on_run(run, thread):
     except Exception as e:
         raise RuntimeError(f"Run 상태 확인 중 오류 발생: {e}")
 
-# CLOVA Sentiment API 호출 함수
-def analyze_sentiment(text):
+# 감정 분석 함수
+def analyze_sentiment(text: str):
     try:
-        CLOVA_SENTIMENT_URL = "https://naveropenapi.apigw.ntruss.com/sentiment-analysis/v1/analyze"
-        clova_client_id = os.getenv("CLOVA_CLIENT_ID")
-        clova_api_key = os.getenv("CLOVA_API_KEY")
-
-        if not clova_client_id or not clova_api_key:
-            raise ClovaAPIError("CLOVA API 키 또는 클라이언트 ID가 설정되지 않았습니다.")
-
-        headers = {
-            "X-NCP-APIGW-API-KEY-ID": clova_client_id,
-            "X-NCP-APIGW-API-KEY": clova_api_key,
-            "Content-Type": "application/json",
+        url = f"https://language.googleapis.com/v1/documents:analyzeSentiment?key={google_api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "document": {
+                "type": "PLAIN_TEXT",
+                "content": text,
+            },
+            "encodingType": "UTF8",
         }
-        response = requests.post(
-            CLOVA_SENTIMENT_URL,
-            json={"content": text},
-            headers=headers
-        )
+        response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
-        return response.json()["document"]["sentiment"]
-    except requests.exceptions.RequestException as e:
-        raise ClovaAPIError(str(e))  # 사용자 정의 예외 발생
+        sentiment = response.json().get("documentSentiment", {})
+        sentiment_score = sentiment.get("score", 0.0)
+        sentiment_magnitude = sentiment.get("magnitude", 0.0)
+
+        # 감정 상태 반환
+        if sentiment_score > 0.5:
+            sentiment_label = "긍정적"
+        elif sentiment_score < -0.5:
+            sentiment_label = "부정적"
+        else:
+            sentiment_label = "중립적"
+
+        return sentiment_label, sentiment_score, sentiment_magnitude
+    except Exception as e:
+        raise RuntimeError(f"감정 분석 중 오류 발생: {e}")
 
 # /api/posts 엔드포인트 정의
 @app.post("/api/posts", response_model=ChatResponse)
@@ -138,14 +144,18 @@ async def chat_with_assistant(request: ChatRequest):
                 response_text += c.text.value
         clean_text = re.sub('【.*?】', '', response_text)
 
-        # CLOVA Sentiment API 호출
-        sentiment = analyze_sentiment(clean_text)
+        # 감정 분석 수행
+        sentiment, sentiment_score, sentiment_magnitude = analyze_sentiment(request.user_message)
 
-        return ChatResponse(response=clean_text, sentiment=sentiment)
+        return ChatResponse(
+            response=clean_text,
+            sentiment=sentiment,
+            sentiment_score=sentiment_score,
+            sentiment_magnitude=sentiment_magnitude,
+        )
 
     except BaseCustomException as e:
         raise e  # 사용자 정의 예외가 발생하면 전역 예외 핸들러에서 처리
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"서버 내부 오류: {e}")
-
 
