@@ -41,7 +41,7 @@ app.add_exception_handler(BaseCustomException, base_custom_exception_handler)
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://192.168.0.2:5173", "http://172.31.4.129:5173", "http://43.202.52.225:5173"],  # React 클라이언트 주소
+    allow_origins=["*"],  # React 클라이언트 주소
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,7 +117,7 @@ def analyze_sentiment(text: str):
         raise RuntimeError(f"감정 분석 중 오류 발생: {e}")
 
 # /api/posts 엔드포인트 정의
-@app.post("/api/posts", response_model=ChatResponse)
+@app.post("/fastapi/posts", response_model=ChatResponse)
 async def chat_with_assistant(request: ChatRequest):
     try:
         # OpenAI Assistant 처리
