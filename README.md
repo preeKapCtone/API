@@ -151,7 +151,7 @@
   <li>Spring Boot, MySQL, ChatGPT (OpenAI API), Unity, Naver CLOVA sentimente</li>
 </ul>
 
-![image](https://github.com/user-attachments/assets/d68f2aa5-fec5-4dcb-8832-d45093e88463)
+![image](https://github.com/user-attachments/assets/898cdc0c-5494-4cb7-bd68-905847237625)
 
 
 ## 🟦 ERD
